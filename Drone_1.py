@@ -38,8 +38,46 @@ def get_action(model, inputs):
 
     return action
 
+def make_model_policy(batch_size):
+        inputs = keras.Input(shape=(6, 6, 3))
+        inputs_flat = Flatten()(inputs)
+        dense1 = Dense(256, activation='relu')
+        dense2 = Dense(64, activation='relu')
+        gru = GRU(32)
+        output = Dense(4)
+
+        x = dense1(inputs_flat)
+        x = dense2(x)
+        x = tf.reshape(x, (batch_size, batch_size, 64))
+        x = gru(x)
+        y = output(x)
+
+        model = keras.Model(inputs=inputs, outputs=y, name='policy_gru_net')
+        model.summary()
+        return model
+
+
+def make_model_value(batch_size):
+    inputs = keras.Input(shape=(6, 6, 3))
+    inputs_flat = Flatten()(inputs)
+    dense1 = Dense(256, activation='relu')
+    dense2 = Dense(64, activation='relu')
+    gru = GRU(32)
+    output = Dense(4)
+
+    x = dense1(inputs_flat)
+    x = dense2(x)
+    x = tf.convert_to_tensor(x)
+    x = tf.reshape(x, (None, batch_size, 64))
+    x = gru(x)
+    y = output(x)
+
+    model = keras.Model(inputs=inputs, outputs=y, name='value_gru_net')
+    model.summary()
+    return model
+
 class PolicyEstimator_GRU:
-    def __init__(self, num_actions, batch_size = 1, lr = 0.00001, scope='policy_estimator'):
+    def __init__(self, num_actions, batch_size, lr = 0.00001, scope='policy_estimator'):
         self.num_actions = num_actions
         self.batch_size = batch_size
         with tf.variable_scope(scope):
@@ -50,12 +88,18 @@ class PolicyEstimator_GRU:
 
             self.state_expanded = tf.expand_dims(self.state, 0)
             self.state_flat = tf.contrib.layers.flatten(inputs=self.state_expanded)
-            self.dense1 = tf.contrib.layers.fully_connected(inputs = self.state_flat, num_outputs=128)
-            self.dense2 = tf.contrib.layers.fully_connected(inputs=self.dense1, num_outputs=32)
+            self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state_flat, num_outputs=256)
+            self.dense2 = tf.contrib.layers.fully_connected(inputs=self.dense1, num_outputs=64)
 
-            #HERE WE WILL EVENTUALLY PUT A 32 LAYER GRU NETWORK
+            self.cell = tf.nn.rnn_cell.GRUCell(32)
 
-            self.output = tf.contrib.layers.fully_connected(inputs=self.dense2, num_outputs=self.num_actions, activation_fn=None)
+            #Issue here, inputs must be a sequence. We are only giving it one list of size 64
+            #need 64 lists of size 1, or 32 lists of size 2
+            self.rnn_outputs, self.final_state = tf.nn.static_rnn(self.cell, inputs=self.dense2, dtype=tf.float32)
+            # HERE WE WILL EVENTUALLY PUT A 32 LAYER GRU NETWORK
+
+            self.output = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs, num_outputs=self.num_actions,
+                                                            activation_fn=None)
 
             self.action_probs = tf.squeeze(tf.nn.softmax(self.output))
             self.picked_action_prob = tf.gather(self.action_probs, self.action)
@@ -64,6 +108,7 @@ class PolicyEstimator_GRU:
 
             self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
             self.train_op = self.optimizer.minimize(self.loss)
+
 
     def predict(self, state, sess=None):
         sess = sess or tf.get_default_session()
@@ -77,19 +122,23 @@ class PolicyEstimator_GRU:
         return loss
 
 class ValueEstimator_GRU:
-    def __init__(self, lr=0.00001, scope='value_estimator'):
+    def __init__(self, batch_size, lr=0.00001, scope='value_estimator'):
         with tf.variable_scope(scope):
             self.state = tf.placeholder(tf.float32, shape=(6, 6, 3), name='state')
             self.target = tf.placeholder(dtype=tf.float32, name='target')
 
             self.state_expanded = tf.expand_dims(self.state, 0)
             self.state_flat = tf.contrib.layers.flatten(inputs=self.state_expanded)
-            self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state_flat, num_outputs=128)
-            self.dense2 = tf.contrib.layers.fully_connected(inputs=self.dense1, num_outputs=32)
+            self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state_flat, num_outputs=256)
+            self.dense2 = tf.contrib.layers.fully_connected(inputs=self.dense1, num_outputs=64)
 
+            self.cell = tf.nn.rnn_cell.GRUCell(32)
+
+            #Maybe use a time distributed layer
+            self.rnn_outputs, self.final_state = tf.nn.static_rnn(self.cell, inputs=self.dense2, dtype=tf.float32)
             # HERE WE WILL EVENTUALLY PUT A 32 LAYER GRU NETWORK
 
-            self.output = tf.contrib.layers.fully_connected(inputs=self.dense2, num_outputs=1,
+            self.output = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs, num_outputs=1,
                                                             activation_fn=None)
 
             self.value_estimate = tf.squeeze(self.output)
@@ -180,19 +229,20 @@ class ValueEstimator:
 
 #num_samples = 1
 #model1 = build_model((6, 6, 3), 4, num_samples)
-def update_1(episode, next_image, value_estimator):
+def reinforce_update(episode, value_est, policy_est, discount_factor=0.99):
 
-    # Calculate TD Target
-    value_next = estimator_value.predict(next_image)
-    td_target = reward + discount_factor * value_next
-    td_error = td_target - estimator_value.predict(classified_image)
+    #Takes the same action for all steps
+    for t, transition in enumerate(episode):
 
-    # Update the value estimator
-    estimator_value.update(classified_image, td_target)
+        total_return = sum(discount_factor**i * t.reward for i, t in enumerate(episode[t:]))
 
-    # Update the policy estimator
-    # using the td error as our advantage estimate
-    estimator_policy.update(classified_image, td_error, action)
+        baseline = value_est.predict(transition.state)
+        advantage = total_return - baseline
+
+        value_est.update(transition.state, total_return)
+
+        policy_est.update(transition.state, advantage, transition.action)
+
 
 def actor_critic(env, estimator_policy, estimator_value, num_episodes, discount_factor=0.99):
 
@@ -215,7 +265,7 @@ def actor_critic(env, estimator_policy, estimator_value, num_episodes, discount_
         actions = []
 
 
-        for t in range(200):
+        for t in range(num_steps):
 
             # Take a step
             action_probs = estimator_policy.predict(classified_image)
@@ -235,6 +285,7 @@ def actor_critic(env, estimator_policy, estimator_value, num_episodes, discount_
             episode_rewards[i_episode] += reward
             episode_lengths[i_episode] = t
 
+            """
             # Calculate TD Target
             value_next = estimator_value.predict(next_image)
             td_target = reward + discount_factor * value_next
@@ -246,11 +297,14 @@ def actor_critic(env, estimator_policy, estimator_value, num_episodes, discount_
             # Update the policy estimator
             # using the td error as our advantage estimate
             estimator_policy.update(classified_image, td_error, action)
+            """
 
             if done:
                 break
 
             classified_image = next_image
+
+        reinforce_update(episode, estimator_value, estimator_policy)
 
         data = collections.Counter(actions)
         most_common_actions.append(data.most_common(1))
@@ -262,9 +316,9 @@ def actor_critic(env, estimator_policy, estimator_value, num_episodes, discount_
     plt.clf()
 
 environment = Env()
-
-policy_estimator = PolicyEstimator(4)
-value_estimator = ValueEstimator()
+num_steps = 200
+policy_estimator = PolicyEstimator_GRU(4, num_steps)
+value_estimator = ValueEstimator_GRU(num_steps)
 
 
 with tf.Session() as sess:
@@ -274,3 +328,5 @@ with tf.Session() as sess:
 
 environment.plot_visited()
 
+#TO DO:
+#Currently, reward is based on only the current state. Try to import only the current state
