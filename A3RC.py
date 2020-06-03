@@ -349,7 +349,7 @@ parser.add_argument('--num_workers', default=8, type=int, help='number of concur
 parser.add_argument('--save_dir', default='A3RCsaves', type=str, help='Save directory')
 args = parser.parse_args()
 
-env = Env()
+env = Env(args)
 
 
 with tf.Session() as sess:

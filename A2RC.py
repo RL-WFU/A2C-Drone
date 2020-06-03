@@ -226,7 +226,7 @@ parser.add_argument('--gamma', default=0.99, type=float, help='discount factor')
 parser.add_argument('--extra_layer', default=False, help='extra hidden layer between recurrent and output')
 args = parser.parse_args()
 
-environment = Env()
+environment = Env(args)
 policy_estimator = PolicyEstimator_RNN(args.sight_dim, lr=args.lr)
 value_estimator = ValueEstimator_RNN(args.sight_dim, lr=args.lr)
 

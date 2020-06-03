@@ -5,7 +5,7 @@ import numpy as np
 
 
 class Env:
-    def __init__(self):
+    def __init__(self, args):
         # Create simulator object and load the image
         self.sim = ICRSsimulator('sample12x12km2.jpg')
         if self.sim.loadImage() == False:
@@ -38,14 +38,18 @@ class Env:
         self.sim.setMapSize(self.totalRows, self.totalCols)
         self.sim.createMap()
 
+        self.sight_dims = args.sight_dim
+        self.image_size = (self.sight_dims * 2 + 1) * (self.sight_dims * 2 + 1)
+
+
         self.num_actions = 4
 
         self.battery = 100
         self.visited = np.ones([self.totalRows, self.totalCols])
         self.cached_points = []
 
-        self.start_row = 2
-        self.start_col = 2
+        self.start_row = self.sight_dims
+        self.start_col = self.sight_dims
 
         self.row_position = self.start_row
         self.col_position = self.start_col
@@ -73,8 +77,8 @@ class Env:
         # clear cached points however you would do that
 
         # randomize starting position
-        self.start_row = random.randint(2,265)
-        self.start_col = random.randint(2,247)
+        self.start_row = random.randint(self.sight_dims,self.totalRows - self.sight_dims - 1)
+        self.start_col = random.randint(self.sight_dims,self.totalCols - self.sight_dims - 1)
 
         self.row_position = self.start_row
         self.col_position = self.start_col
@@ -84,27 +88,27 @@ class Env:
         self.done = False
         # need to add controls for reaching the edge of the region
         # These are overly simplified discrete actions, will want to make this continuous at some point
-        if action == 0 and self.row_position < (self.totalRows - self.sim.droneImgSize['rows'] - 1):  # Forward one grid #261 - imgsize + 1
+        if action == 0 and self.row_position < (self.totalRows - self.sight_dims - 1):  # Forward one grid #261 - imgsize + 1
 
             next_row = self.row_position + 1
             next_col = self.col_position
-        elif action == 1 and self.col_position < (self.totalCols - self.sim.droneImgSize['cols'] - 1):  # right one grid #243 - imgsize + 1
+        elif action == 1 and self.col_position < (self.totalCols - self.sight_dims - 1):  # right one grid #243 - imgsize + 1
 
             next_row = self.row_position
             next_col = self.col_position + 1
-        elif action == 2 and self.row_position > self.sim.droneImgSize['rows']:  # back one grid
+        elif action == 2 and self.row_position > self.sight_dims + 1:  # back one grid
 
             next_row = self.row_position - 1
             next_col = self.col_position
-        elif action == 3 and self.col_position > self.sim.droneImgSize['cols']:  # left one grid
-            self.sim.setDroneImgSize(2, 2)
+        elif action == 3 and self.col_position > self.sight_dims + 1:  # left one grid
+
             next_row = self.row_position
             next_col = self.col_position - 1
         else:
             next_row = self.row_position
             next_col = self.col_position
 
-        self.sim.setDroneImgSize(2, 2)
+        self.sim.setDroneImgSize(self.sight_dims, self.sight_dims)
         navMapSize = self.sim.setNavigationMap()
 
         classifiedImage = self.sim.getClassifiedDroneImageAt(next_row, next_col)
@@ -143,9 +147,9 @@ class Env:
                 returned_to_start = True
 
         # If we don't want just the one position, then we can iterate over classifiedImage, adding all of each class
-        mining_prob = classifiedImage[2,2,0]
-        forest_prob = classifiedImage[2,2,1]
-        water_prob = classifiedImage[2,2,2]
+        mining_prob = classifiedImage[self.sight_dims, self.sight_dims,0]
+        forest_prob = classifiedImage[self.sight_dims, self.sight_dims,1]
+        water_prob = classifiedImage[self.sight_dims, self.sight_dims,2]
 
         #print(mining_prob, forest_prob, water_prob)
 
@@ -172,7 +176,7 @@ class Env:
 
         for i in range(4):
             for j in range(4):
-                self.visited[self.row_position + i - 2, self.col_position + j - 2] *= .9
+                self.visited[self.row_position + i - self.sight_dims, self.col_position + j - self.sight_dims] *= .9
 
     def plot_visited(self):
         plt.imshow(self.visited[:, :], cmap='gray', interpolation='none')
@@ -180,7 +184,7 @@ class Env:
         plt.show()
 
     def getClassifiedDroneImage(self):
-        self.sim.setDroneImgSize(2, 2)
+        self.sim.setDroneImgSize(self.sight_dims, self.sight_dims)
         navMapSize = self.sim.setNavigationMap()
         image = self.sim.getClassifiedDroneImageAt(self.row_position, self.col_position)
         return image
