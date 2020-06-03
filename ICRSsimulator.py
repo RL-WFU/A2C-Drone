@@ -71,7 +71,7 @@ class ICRSsimulator(object):
 		cols = self.mapSize['cols']
 		dImgrows = self.droneImgSize['rows']
 		dImgcols = self.droneImgSize['cols']
-		self.navigationMap = np.zeros((rows - dImgrows + 1, cols - dImgcols + 1))
+		self.navigationMap = np.zeros((rows - dImgrows, cols - dImgcols))
 		return self.navigationMap.shape
 
 	# Create the overall classification map
@@ -134,9 +134,11 @@ class ICRSsimulator(object):
 		return self.ICRSmap[row, col, :]
 
 	# Get the classification likelihoods in a neighborhood of the ICRSmap
+
+
 	def getClassifiedDroneImageAt(self, row, col):
 		self.navigationMap[row,col] = self.navigationMap[row,col] + 1
-		return self.ICRSmap[row : row + self.droneImgSize['rows'], col : col + self.droneImgSize['cols']]
+		return self.ICRSmap[row - self.droneImgSize['rows'] : row + self.droneImgSize['rows']+1, col - self.droneImgSize['cols']: col + self.droneImgSize['cols']+1]
 
 	# Plot the original image as well as the binary classification images
 	def showMap(self):
