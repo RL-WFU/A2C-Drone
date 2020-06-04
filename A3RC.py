@@ -1,6 +1,4 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.layers import (TimeDistributed, Activation, Dense, Flatten, Input, GRU)
