@@ -25,6 +25,26 @@ def get_action(model, inputs):
 
     return action
 
+def write_hyper_parameters(out):
+    out.write("seq_length: {}".format(args.seq_length))
+    out.write("\n")
+    out.write("num_steps: {}".format(args.num_steps))
+    out.write("\n")
+    out.write("sight_dim: {}".format(args.sight_dim))
+    out.write("\n")
+    out.write("num_episodes: {}".format(args.num_episodes))
+    out.write("\n")
+    out.write("lr: {}".format(args.lr))
+    out.write("\n")
+    out.write("gamma: {}".format(args.gamma))
+    out.write("\n")
+    out.write("extra_layer: {}".format(args.extra_layer))
+    out.write("\n")
+    out.write("layer_val: {}".format(args.layer_val))
+    out.write("\n")
+    out.write("net_config: {}".format(args.net_config))
+    out.write("\n")
+    out.write("image: {}".format(args.image))
 
 
 def get_last_t_states(t, episode):
@@ -85,19 +105,35 @@ class PolicyEstimator_RNN:
         with tf.variable_scope(scope):
             self.state = tf.placeholder(shape=[None, self.train_length, (self.sight_dim * 2 + 1) * (self.sight_dim * 2 + 1) * 3], dtype=tf.float32, name='state')
 
-            self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state, num_outputs=256)
-            self.dense2 = tf.contrib.layers.fully_connected(inputs=self.dense1, num_outputs=64)
+            if args.net_config == 0:
+                self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state, num_outputs=args.layer_val)
+                self.dense2 = tf.contrib.layers.fully_connected(inputs=self.dense1, num_outputs=args.layer_val // 2)
 
-            self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(32)
-            self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(args.layer_val // 4)
+                self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
 
-            self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.dense2, initial_state=self.initial_state)
+                self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.dense2,
+                                                            initial_state=self.initial_state)
 
-            self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * 32])
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * args.layer_val // 4])
+
+            elif args.net_config == 1:
+                self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state, num_outputs=args.layer_val)
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(args.layer_val // 2)
+                self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
+                self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.dense1,
+                                                            initial_state=self.initial_state)
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * args.layer_val // 2])
+
+            elif args.net_config == 2:
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(args.layer_val)
+                self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
+                self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.state, initial_state=self.initial_state)
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * args.layer_val])
 
             #Goes from [1, 192] to [1, 4], may need another fully connected layer
             if args.extra_layer:
-                self.dense3 = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs, num_outputs=16)
+                self.dense3 = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs, num_outputs=args.layer_val//4)
                 self.output = tf.contrib.layers.fully_connected(inputs=self.dense3, num_outputs=4)
             else:
                 self.output = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs, num_outputs=4)
@@ -133,19 +169,40 @@ class ValueEstimator_RNN:
             self.state = tf.placeholder(shape=[None, self.train_length, (self.sight_dim * 2 + 1) * (self.sight_dim * 2 + 1) * 3],
                                         dtype=tf.float32, name='state')
 
-            self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state, num_outputs=256)
-            self.dense2 = tf.contrib.layers.fully_connected(inputs=self.dense1, num_outputs=64)
+            if args.net_config == 0:
+                self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state, num_outputs=args.layer_val)
+                self.dense2 = tf.contrib.layers.fully_connected(inputs=self.dense1, num_outputs=args.layer_val // 2)
 
-            self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(32)
-            self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(args.layer_val // 4)
+                self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
 
-            self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.dense2, initial_state=self.initial_state)
+                self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.dense2,
+                                                            initial_state=self.initial_state)
 
-            self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * 32])
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * args.layer_val // 4])
+
+            elif args.net_config == 1:
+                self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state, num_outputs=args.layer_val)
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(args.layer_val // 2)
+                self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
+                self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.dense1,
+                                                            initial_state=self.initial_state)
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * args.layer_val // 2])
+
+            elif args.net_config == 2:
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(args.layer_val)
+                self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
+                self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.state, initial_state=self.initial_state)
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * args.layer_val])
 
             # Goes from [1, 192] to [1, 4], may need another fully connected layer
 
-            self.output = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs, num_outputs=1)
+            if args.extra_layer:
+                self.dense3 = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs,
+                                                                num_outputs=args.layer_val//4)
+                self.output = tf.contrib.layers.fully_connected(inputs=self.dense3, num_outputs=1)
+            else:
+                self.output = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs, num_outputs=1)
 
             self.value_estimate = tf.squeeze(self.output)
 
@@ -174,8 +231,7 @@ class MasterAgent:
         self.global_policy = PolicyEstimator_RNN(args.sight_dim, scope='Global_policy')
         self.global_value = ValueEstimator_RNN(args.sight_dim, scope='Global_value')
         self.save_dir = args.save_dir
-        if not os.path.exists(self.save_dir):
-            os.makedirs(self.save_dir)
+
 
     def train(self):
         res_queue = Queue()
@@ -345,11 +401,24 @@ parser.add_argument('--gamma', default=0.99, type=float, help='discount factor')
 parser.add_argument('--extra_layer', default=False, help='extra hidden layer between recurrent and output')
 parser.add_argument('--num_workers', default=8, type=int, help='number of concurrent workers')
 parser.add_argument('--save_dir', default='A3RCsaves', type=str, help='Save directory')
+parser.add_argument('--layer_val', default=128, type=int, help='First layer hidden units (min=64')
+parser.add_argument('--net_config', default=2, type=int, help='ID of network configuration')
+parser.add_argument('--image', default='image1.JPG', type=str, help='Environment image file')
 args = parser.parse_args()
+
+
 
 env = Env(args)
 
+if not os.path.exists(args.save_dir):
+    os.makedirs(args.save_dir)
+
+outF = open(os.path.join(args.save_dir, "hyper_parameters.txt"), "a")
+write_hyper_parameters(outF)
+outF.close()
 
 with tf.Session() as sess:
     agent = MasterAgent(env)
     agent.train()
+    
+

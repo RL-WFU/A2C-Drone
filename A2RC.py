@@ -1,4 +1,5 @@
 import tensorflow as tf
+import os
 from tensorflow import keras
 from tensorflow.keras.layers import (TimeDistributed, Activation, Dense, Flatten, Input, GRU)
 import numpy as np
@@ -20,6 +21,27 @@ def get_action(model, inputs):
 
     return action
 
+def write_hyper_parameters(out):
+    out.write("seq_length: {}".format(args.seq_length))
+    out.write("\n")
+    out.write("num_steps: {}".format(args.num_steps))
+    out.write("\n")
+    out.write("sight_dim: {}".format(args.sight_dim))
+    out.write("\n")
+    out.write("num_episodes: {}".format(args.num_episodes))
+    out.write("\n")
+    out.write("lr: {}".format(args.lr))
+    out.write("\n")
+    out.write("gamma: {}".format(args.gamma))
+    out.write("\n")
+    out.write("extra_layer: {}".format(args.extra_layer))
+    out.write("\n")
+    out.write("layer_val: {}".format(args.layer_val))
+    out.write("\n")
+    out.write("net_config: {}".format(args.net_config))
+    out.write("\n")
+    out.write("image: {}".format(args.image))
+
 
 
 class PolicyEstimator_RNN:
@@ -30,19 +52,33 @@ class PolicyEstimator_RNN:
         with tf.variable_scope(scope):
             self.state = tf.placeholder(shape=[None, self.train_length, (self.sight_dim * 2 + 1) * (self.sight_dim * 2 + 1) * 3], dtype=tf.float32, name='state')
 
-            self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state, num_outputs=256)
-            self.dense2 = tf.contrib.layers.fully_connected(inputs=self.dense1, num_outputs=64)
+            if args.net_config == 0:
+                self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state, num_outputs=args.layer_val)
+                self.dense2 = tf.contrib.layers.fully_connected(inputs=self.dense1, num_outputs=args.layer_val//2)
 
-            self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(32)
-            self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(args.layer_val//4)
+                self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
 
-            self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.dense2, initial_state=self.initial_state)
+                self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.dense2, initial_state=self.initial_state)
 
-            self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * 32])
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * args.layer_val//4])
+
+            elif args.net_config == 1:
+                self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state, num_outputs=args.layer_val)
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(args.layer_val//2)
+                self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
+                self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.dense1, initial_state=self.initial_state)
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * args.layer_val//2])
+
+            elif args.net_config == 2:
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(args.layer_val)
+                self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
+                self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.state, initial_state=self.initial_state)
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * args.layer_val])
 
             #Goes from [1, 192] to [1, 4], may need another fully connected layer
             if args.extra_layer:
-                self.dense3 = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs, num_outputs=16)
+                self.dense3 = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs, num_outputs=args.layer_val//4)
                 self.output = tf.contrib.layers.fully_connected(inputs=self.dense3, num_outputs=4)
             else:
                 self.output = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs, num_outputs=4)
@@ -78,19 +114,40 @@ class ValueEstimator_RNN:
             self.state = tf.placeholder(shape=[None, self.train_length, (self.sight_dim * 2 + 1) * (self.sight_dim * 2 + 1) * 3],
                                         dtype=tf.float32, name='state')
 
-            self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state, num_outputs=256)
-            self.dense2 = tf.contrib.layers.fully_connected(inputs=self.dense1, num_outputs=64)
+            if args.net_config == 0:
+                self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state, num_outputs=args.layer_val)
+                self.dense2 = tf.contrib.layers.fully_connected(inputs=self.dense1, num_outputs=args.layer_val // 2)
 
-            self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(32)
-            self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(args.layer_val // 4)
+                self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
 
-            self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.dense2, initial_state=self.initial_state)
+                self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.dense2,
+                                                            initial_state=self.initial_state)
 
-            self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * 32])
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * args.layer_val // 4])
+
+            elif args.net_config == 1:
+                self.dense1 = tf.contrib.layers.fully_connected(inputs=self.state, num_outputs=args.layer_val)
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(args.layer_val // 2)
+                self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
+                self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.dense1,
+                                                            initial_state=self.initial_state)
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * args.layer_val // 2])
+
+            elif args.net_config == 2:
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(args.layer_val)
+                self.initial_state = self.rnn_cell.zero_state(batch_size=1, dtype=tf.float32)
+                self.rnn_outputs, state = tf.nn.dynamic_rnn(self.rnn_cell, self.state, initial_state=self.initial_state)
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.train_length * args.layer_val])
 
             # Goes from [1, 192] to [1, 4], may need another fully connected layer
 
-            self.output = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs, num_outputs=1)
+            if args.extra_layer:
+                self.dense3 = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs,
+                                                                num_outputs=args.layer_val // 4)
+                self.output = tf.contrib.layers.fully_connected(inputs=self.dense3, num_outputs=1)
+            else:
+                self.output = tf.contrib.layers.fully_connected(inputs=self.rnn_outputs, num_outputs=1)
 
             self.value_estimate = tf.squeeze(self.output)
 
@@ -134,17 +191,19 @@ def get_last_t_minus_one_states(t, episode):
 
 
 def actor_critic(env, estimator_policy, estimator_value, num_episodes, discount_factor=0.99):
+
+
     Transition = collections.namedtuple("Transition", ["state", "action", "reward", "next_state", "done"])
-    episode_rewards = []
-    episode_lengths = []
+    episode_rewards = np.zeros(0)
+    episode_lengths = np.zeros(0)
     most_common_actions = []
     for i_episode in range(num_episodes):
         # Reset the environment and pick the first action
         env.reset()
 
         episode = []
-        episode_rewards.append(0)
-        episode_lengths.append(0)
+        episode_rewards = np.append(episode_rewards, 0)
+        episode_lengths = np.append(episode_lengths, 0)
 
         classified_image = env.getClassifiedDroneImage()
 
@@ -192,10 +251,19 @@ def actor_critic(env, estimator_policy, estimator_value, num_episodes, discount_
                 estimator_policy.update(states, td_error, action)
 
 
+
             if done:
                 break
 
             classified_image = next_image
+
+        if i_episode % 1000 == 0 and i_episode > 0:
+            episodes = [i + i_episode - 1000 for i in range(1000)]
+            plt.plot(episodes, episode_rewards[i_episode-1000:i_episode])
+            plt.ylabel('Episode reward')
+            plt.xlabel('Episode')
+            plt.savefig(os.path.join(args.save_dir, 'Rewards {} to {}.png'.format(i_episode, i_episode + 1000)))
+            plt.clf()
 
 
         data = collections.Counter(actions)
@@ -208,7 +276,7 @@ def actor_critic(env, estimator_policy, estimator_value, num_episodes, discount_
     plt.plot(episode_rewards)
     plt.ylabel('Episode reward')
     plt.xlabel('Episode')
-    plt.show()
+    plt.savefig(os.path.join(args.save_dir, 'Rewards all episodes.png'))
     plt.clf()
 
 
@@ -220,22 +288,39 @@ parser = argparse.ArgumentParser(description='Drone A2C trainer')
 parser.add_argument('--seq_length', default=6, type=int, help='number of stacked images')
 parser.add_argument('--num_steps', default=1000, type=int, help='episode length')
 parser.add_argument('--sight_dim', default=2, type=int, help='Drone sight distance')
-parser.add_argument('--num_episodes', default=5000, type=int, help='number of episodes')
+parser.add_argument('--num_episodes', default=5, type=int, help='number of episodes')
 parser.add_argument('--lr', default=0.0001, type=float, help='learning rate')
 parser.add_argument('--gamma', default=0.99, type=float, help='discount factor')
 parser.add_argument('--extra_layer', default=False, help='extra hidden layer between recurrent and output')
+parser.add_argument('--save_dir', default='A2RC_saves', type=str, help='Save directory')
+parser.add_argument('--layer_val', default=64, type=int, help='First layer hidden units (min=64')
+parser.add_argument('--net_config', default=2, type=int, help='ID of network configuration')
+parser.add_argument('--image', default='image3.TIF', type=str, help='Environment image file')
 args = parser.parse_args()
+
+
+
+
 
 environment = Env(args)
 policy_estimator = PolicyEstimator_RNN(args.sight_dim, lr=args.lr)
 value_estimator = ValueEstimator_RNN(args.sight_dim, lr=args.lr)
+
+if not os.path.exists(args.save_dir):
+    os.makedirs(args.save_dir)
+
+outF = open(os.path.join(args.save_dir, "hyper_parameters.txt"), "a")
+write_hyper_parameters(outF)
+outF.close()
 
 with tf.Session() as sess:
     init_op = tf.global_variables_initializer()
     sess.run(init_op)
     actor_critic(environment, policy_estimator, value_estimator, args.num_episodes)
 
-environment.plot_visited()
+
+
+#environment.plot_visited()
 
 # TO DO:
 # Currently, reward is based on only the current state. Try to import only the current state,
